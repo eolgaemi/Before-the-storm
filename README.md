@@ -17,14 +17,11 @@
 
 ## 📌 사용 기술 및 개발환경
 ### 모바일 심박수, 온습도 측정기 (아두이노)
-[![Generic badge](https://img.shields.io/badge/Arduino-Uno.svg)](https://shields.io/) 
-[![Generic badge](https://img.shields.io/badge/C.svg)](https://shields.io/) 
-[![Generic badge](https://img.shields.io/badge/ArduinoIDE.svg)](https://shields.io/)
+![bts_arduino](https://github.com/user-attachments/assets/d7ad8aac-84a6-43c1-aa8c-3bf327f37cc0)
+
 ### IoT 서버 (라즈베리 파이 4B)
 [![Generic badge](https://img.shields.io/badge/Raspbian-Bookworm-red.svg)](https://shields.io/)
 [![Generic badge](https://img.shields.io/badge/MariaDB-15.1-green.svg)](https://shields.io/)
-### IoT 컨트롤러 (STM32 F411RE)
-[![Generic badge](https://img.shields.io/badge/C.svg)](https://shields.io/) 
-[![Generic badge](https://img.shields.io/badge/STMCubeIDE.svg)](https://shields.io/)
 
-## 📌 시제품 사용 장비
+### IoT 컨트롤러 (STM32 F411RE)
+![bts_stmf411](https://github.com/user-attachments/assets/939b8757-04b6-4121-8f39-463907ad4b75)
