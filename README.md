@@ -1,5 +1,5 @@
 # 🚨Before the storm (폭풍전야)
-모바일 스트레스 측정기를 이용한 Bio sync home 시스템
+심박센서 활용 스트레스 측정기를 이용한 Bio sync home 시스템
 
 ## 📌 프로젝트 개요
 - 더 정확하고 신뢰도 높은 스트레스 측정   🚨
@@ -18,9 +18,8 @@
 ## 📌 시스템 흐름도
 ![bts_flow](https://github.com/user-attachments/assets/d485a47f-1880-49fe-bbe4-191e1bce61ea)
 
-
 ## 📌 사용 기술 및 개발환경
-### 모바일 심박수, 온습도 측정기 (아두이노)
+### 심박수, 온습도 측정기 (아두이노)
 ![bts_arduino](https://github.com/user-attachments/assets/d7ad8aac-84a6-43c1-aa8c-3bf327f37cc0)
 
 ### IoT 서버 (라즈베리 파이 4B)
