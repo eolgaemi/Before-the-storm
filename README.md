@@ -1,5 +1,5 @@
 # 🚨Before the storm (폭풍전야)
-모바일 스트레스 측정기를 이용한 Bio sync home 시스템
+심박센서 활용 스트레스 측정기를 이용한 Bio sync home 시스템
 
 ## 📌 프로젝트 개요
 - 더 정확하고 신뢰도 높은 스트레스 측정   🚨
@@ -15,16 +15,16 @@
 - 서버는 주기적으로 데이터를 수신받고, 스트레스 수치를 업데이트 할 수 있다.
 - 서버는 업데이트 된 스트레스 수치에 따라 Home IoT의 상태를 바꿀 수 있다.
 
+## 📌 시스템 흐름도
+![bts_flow](https://github.com/user-attachments/assets/d485a47f-1880-49fe-bbe4-191e1bce61ea)
+
 ## 📌 사용 기술 및 개발환경
-### 모바일 심박수, 온습도 측정기 (아두이노)
-[![Generic badge](https://img.shields.io/badge/Arduino-Uno.svg)](https://shields.io/) 
-[![Generic badge](https://img.shields.io/badge/C.svg)](https://shields.io/) 
-[![Generic badge](https://img.shields.io/badge/ArduinoIDE.svg)](https://shields.io/)
+### 심박수, 온습도 측정기 (아두이노)
+![bts_arduino](https://github.com/user-attachments/assets/d7ad8aac-84a6-43c1-aa8c-3bf327f37cc0)
+
 ### IoT 서버 (라즈베리 파이 4B)
 [![Generic badge](https://img.shields.io/badge/Raspbian-Bookworm-red.svg)](https://shields.io/)
 [![Generic badge](https://img.shields.io/badge/MariaDB-15.1-green.svg)](https://shields.io/)
-### IoT 컨트롤러 (STM32 F411RE)
-[![Generic badge](https://img.shields.io/badge/C.svg)](https://shields.io/) 
-[![Generic badge](https://img.shields.io/badge/STMCubeIDE.svg)](https://shields.io/)
 
-## 📌 시제품 사용 장비
+### IoT 컨트롤러 (STM32 F411RE)
+![bts_stmf411](https://github.com/user-attachments/assets/939b8757-04b6-4121-8f39-463907ad4b75)
