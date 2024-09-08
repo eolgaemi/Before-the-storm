@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include <mysql/mysql.h>
 #include <math.h>
+#include <sys/wait.h>
 
 #define BUF_SIZE 100
 #define NAME_SIZE 20
@@ -85,13 +86,24 @@ void calculateHRVFromHeartRateNSendData(int heart_rates[], int count, int temp, 
     send_stress_message(status);
 }
 
-// 음악 재생 함수
 void play_music(const char* music_file) {
-    char command[256];
-    snprintf(command, sizeof(command), "mpg123 %s", music_file);
-    int result = system(command);
-    if (result == -1) {
-        perror("Music playback failed");
+    pid_t pid = fork();  // 새로운 프로세스 생성
+
+    if (pid == -1) {
+        // fork 실패 시 에러 처리
+        perror("fork() failed");
+        return;
+    }
+
+    if (pid == 0) {
+        // 자식 프로세스에서 음악 재생
+        execlp("mpg123", "mpg123", music_file, (char*)NULL);
+        // execlp 실패 시 에러 출력
+        perror("execlp() failed");
+        exit(EXIT_FAILURE);
+    } else {
+        waitpid(pid, NULL, 0);
+        printf("Playing music: %s\n", music_file);
     }
 }
 
