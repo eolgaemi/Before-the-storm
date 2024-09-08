@@ -26,41 +26,48 @@
 #define SERVER_PORT 5000          // 서버 포트
 #define PASSWD "PASSWD"           // 패스워드 상수
 
-// 함수 선언
-void send_stress_message(const char* status);
-void* send_msg(void* arg);
-void* recv_msg(void* arg);
-void* hrv_msg(void* arg);
-void error_handling(char* msg);
-void play_music(const char* music_file);
+// 조건 변수와 뮤텍스 정의
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;   // 뮤텍스 초기화
+pthread_cond_t cond = PTHREAD_COND_INITIALIZER;      // 조건 변수 초기화
 
-// HRV 데이터를 저장하는 구조체
+// 함수 선언
+void send_stress_message(const char* status);        // 스트레스 메시지를 서버로 전송하는 함수
+void* send_msg(void* arg);                           // 메시지를 송신하는 스레드 함수
+void* recv_msg(void* arg);                           // 메시지를 수신하는 스레드 함수
+void* hrv_msg(void* arg);                            // HRV 데이터를 처리하는 스레드 함수
+void error_handling(char* msg);                      // 에러 처리 함수
+void play_music(const char* music_file);             // 음악을 재생하는 함수
+void timer_handler(int signum);                      // 타이머 만료 시 호출되는 핸들러 함수
+void set_timer(int interval_sec);                    // 타이머 설정 함수
+
+// HRV 데이터를 저장하는 구조체 정의
 typedef struct {
     float sdnn;
     float rmssd;
     float pnn50;
 } HRVData;
 
-// 글로벌 변수
-char name[NAME_SIZE] = "[Default]";  // 사용자 이름을 저장할 변수
+// 글로벌 변수 선언
+char name[NAME_SIZE] = "[Default]";  // 사용자 이름을 저장하는 변수
 char msg[BUF_SIZE];                  // 메시지 저장 버퍼
 int hbeat[HBEAT_SIZE * HRV_HOUR];     // 심박수 데이터를 저장하는 배열
-int temp, humi;                      // 온도 및 습도 데이터
-volatile sig_atomic_t timer_expired = 0; // 타이머 만료 상태를 나타내는 변수
-volatile int stress_level = -1;       // 스트레스 레벨
+int temp, humi;                      // 온도 및 습도 데이터 저장 변수
+volatile sig_atomic_t timer_expired = 0; // 타이머 만료 상태를 나타내는 플래그
+volatile int stress_level = -1;       // 스트레스 레벨을 저장하는 변수
 HRVData hrv;                          // HRV 데이터를 저장할 구조체
 
 // MySQL 에러 처리 함수
 void finish_with_error(MYSQL* con) {
-    fprintf(stderr, "%s\n", mysql_error(con));  // 에러 메시지를 출력
+    fprintf(stderr, "%s\n", mysql_error(con));  // MySQL 에러 메시지 출력
     mysql_close(con);                           // MySQL 연결 종료
     exit(1);                                    // 프로그램 종료
 }
 
 // HRV 데이터를 계산하고 스트레스 메시지를 전송하는 함수
+// HRV: Heart Rate Variability (심박수 변동성)
 void calculateHRVFromHeartRateNSendData(int heart_rates[], int count, int temp, int humi, HRVData* hrv) {
-    double sum = 0.0, sum_sq_diff = 0.0;  // 평균과 차이의 제곱합을 계산할 변수
-    int nn50_count = 0;                   // NN50을 계산할 때 사용
+    double sum = 0.0, sum_sq_diff = 0.0;  // 평균과 차이의 제곱합 계산 변수
+    int nn50_count = 0;                   // NN50 카운트 (연속된 심박수 간의 차이가 50ms 이상인 횟수)
 
     // 심박수 평균 계산
     for (int i = 0; i < count; i++) {
@@ -78,41 +85,63 @@ void calculateHRVFromHeartRateNSendData(int heart_rates[], int count, int temp, 
     hrv->rmssd = sqrt(sum_sq_diff / (count - 1)); // RMSSD 계산
     hrv->pnn50 = (double)nn50_count / (count - 1) * 100.0; // pNN50 계산
 
-    // 스트레스 레벨 계산 (기준값에 따른 스트레스 레벨 결정)
+    // 스트레스 레벨 결정
     stress_level = (hrv->sdnn < 50) + (hrv->rmssd < 42) + (hrv->pnn50 < 3);
     printf("Stress level: %d, Temp: %d, Humidity: %d\n", stress_level, temp, humi);
 
-    // 스트레스 상태에 따라 상태 결정 (GREEN, YELLOW, RED)
+    // 스트레스 레벨에 따른 상태 결정 및 음악 파일 설정
     const char* status = stress_level == 0 ? "GREEN@ON" :
                          stress_level == 1 ? "YELLOW@ON" : 
                          stress_level >= 2 ? "RED@ON" : "UNKNOWN";
 
-    // 상태에 따라 음악 파일 설정 및 실행
     const char* music_file = stress_level == 0 ? "green.mp3" :
                              stress_level == 1 ? "yellow.mp3" : "red.mp3";
-    play_music(music_file);  // 음악 재생
-    send_stress_message(status);  // 스트레스 메시지 전송
+    
+    play_music(music_file);  // 스트레스 상태에 따른 음악 재생
+    send_stress_message(status);  // 스트레스 상태 메시지 서버로 전송
+}
+
+// 타이머 설정 함수 (주기적으로 SIGALRM 신호 발생)
+void set_timer(int interval_sec) {
+    struct itimerval timer;  // 타이머 구조체 선언
+
+    signal(SIGALRM, timer_handler);  // 타이머가 만료되었을 때 호출되는 핸들러 설정
+
+    // 타이머 초기 설정 (최초 실행 시간과 반복 주기 설정)
+    timer.it_value.tv_sec = interval_sec;  // 최초 타이머 실행 시간 설정
+    timer.it_value.tv_usec = 0;
+    timer.it_interval.tv_sec = interval_sec;  // 반복 주기 설정
+    timer.it_interval.tv_usec = 0;
+
+    if (setitimer(ITIMER_REAL, &timer, NULL) == -1) {  // 타이머 설정
+        perror("setitimer() error");
+        exit(1);
+    }
+}
+
+// 타이머가 만료되었을 때 호출되는 핸들러 함수
+void timer_handler(int signum) {
+    pthread_mutex_lock(&mutex);  // 뮤텍스 잠금
+    timer_expired = 1;           // 타이머 만료 상태로 플래그 설정
+    pthread_cond_signal(&cond);  // 타이머 만료 신호를 대기 중인 스레드에 전달
+    pthread_mutex_unlock(&mutex); // 뮤텍스 해제
 }
 
 // 음악을 재생하는 함수
 void play_music(const char* music_file) {
-    pid_t pid = fork();  // 자식 프로세스를 생성
+    pid_t pid = fork();  // 자식 프로세스를 생성하여 음악을 재생
 
-    if (pid == -1) {
-        // fork 실패 시 에러 처리
+    if (pid == -1) {  // 자식 프로세스 생성 실패 시
         perror("fork() failed");
         return;
     }
 
-    if (pid == 0) {
-        // 자식 프로세스에서 음악 재생
+    if (pid == 0) {  // 자식 프로세스에서 음악 재생
         execlp("mpg123", "mpg123", music_file, (char*)NULL);
-        // execlp 실패 시 에러 출력
-        perror("execlp() failed");
+        perror("execlp() failed");  // execlp 실패 시 에러 메시지 출력
         exit(EXIT_FAILURE);
     } else {
-        // 음악재생 프로세스가 끝날 때 까지 기다리지 않음, 메시지 출력
-        printf("Playing music: %s\n", music_file);
+        printf("Playing music: %s\n", music_file);  // 음악 재생 메시지 출력
     }
 }
 
@@ -123,7 +152,7 @@ void send_stress_message(const char* status) {
     char name_msg[BUF_SIZE];
     char cmd_msg[BUF_SIZE];
 
-    signal(SIGPIPE, SIG_IGN);  // SIGPIPE 무시 (서버 연결이 끊어졌을 때 무시)
+    signal(SIGPIPE, SIG_IGN);  // SIGPIPE 무시 (서버 연결이 끊어졌을 때 오류 방지)
 
     sock = socket(PF_INET, SOCK_STREAM, 0);  // 소켓 생성
     if (sock == -1) {
@@ -131,7 +160,8 @@ void send_stress_message(const char* status) {
         return;
     }
 
-    memset(&serv_addr, 0, sizeof(serv_addr));  // 서버 주소 초기화
+    // 서버 주소 초기화
+    memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = inet_addr(SERVER_IP);  // 서버 IP 설정
     serv_addr.sin_port = htons(SERVER_PORT);  // 서버 포트 설정
@@ -154,39 +184,14 @@ void send_stress_message(const char* status) {
     close(sock);  // 소켓 종료
 }
 
-// 타이머가 만료되었을 때 호출되는 핸들러 함수
-void timer_handler(int signum) {
-    timer_expired = 1;  // 타이머 만료 상태로 설정
-}
-
-// 메시지 수신을 처리하는 스레드 함수
-void* recv_msg(void* arg) {
-    int* sock = (int*)arg;
-    char name_msg[NAME_SIZE + BUF_SIZE + 1];
-    int str_len;
-
-    // 서버로부터 메시지를 읽어 콘솔에 출력
-    while (1) {
-        memset(name_msg, 0, sizeof(name_msg));
-        str_len = read(*sock, name_msg, sizeof(name_msg) - 1);
-        if (str_len <= 0) {
-            *sock = -1;  // 연결 종료 시 소켓을 -1로 설정
-            return NULL;
-        }
-
-        name_msg[str_len] = '\0';  // 문자열 종료
-        fputs(name_msg, stdout);  // 메시지 출력
-    }
-}
-
 // 메시지 송신을 처리하는 스레드 함수
 void* send_msg(void* arg) {
-    int* sock = (int*)arg;
+    int* sock = (int*)arg;  // 전달받은 소켓
     char name_msg[NAME_SIZE + BUF_SIZE + 2];
 
     // 사용자 입력을 받아 서버로 전송
     while (1) {
-        memset(msg, 0, sizeof(msg));
+        memset(msg, 0, sizeof(msg));  // 메시지 버퍼 초기화
         fgets(msg, BUF_SIZE, stdin);  // 사용자 입력 받기
 
         if (!strncmp(msg, "quit", 4)) {  // "quit" 입력 시 종료
@@ -194,63 +199,141 @@ void* send_msg(void* arg) {
             return NULL;
         }
 
-        snprintf(name_msg, sizeof(name_msg), "[ALLMSG]%s", msg);  // 입력 메시지에 포맷팅 추가
-        if (write(*sock, name_msg, strlen(name_msg)) <= 0) {  // 메시지 전송
+        // 사용자 입력 메시지를 서버로 전송
+        snprintf(name_msg, sizeof(name_msg), "[ALLMSG]%s", msg);
+        if (write(*sock, name_msg, strlen(name_msg)) <= 0) {  // 전송 실패 시
             *sock = -1;
             return NULL;
         }
     }
 }
 
-// HRV 계산 및 데이터를 처리하는 스레드 함수
-void* hrv_msg(void* arg) {
+// 메시지 수신을 처리하는 스레드 함수
+void* recv_msg(void* arg) {
+    MYSQL* conn = mysql_init(NULL);    // MySQL 초기화
+    MYSQL_ROW sqlrow;
+    int res;
+    char sql_cmd[200] = { 0 };
+    int* sock = (int*)arg;             // 전달된 소켓
+    int i;
+    char* pToken;
+    char* pArray[ARR_CNT] = { 0 };
+
+    char name_msg[NAME_SIZE + BUF_SIZE + 1];
+    int str_len;
+
+    int illu;
+    double temp;
+    double humi;
+    
+    puts("MYSQL startup");
+    if (conn == NULL || !mysql_real_connect(conn, HOST, USER, PASS, DB, 0, NULL, 0)) {  // MySQL 연결 실패 시 처리
+        fprintf(stderr, "ERROR : %s[%d]\n", mysql_error(conn), mysql_errno(conn));
+        mysql_close(conn);
+        exit(1);
+    } else {
+        printf("Connection Successful!\n\n");
+    }
+
+    // 서버에서 받은 메시지 처리
     while (1) {
-        if (timer_expired) {  // 타이머가 만료되었는지 확인
-            MYSQL* conn = mysql_init(NULL);  // MySQL 초기화
-            if (conn == NULL || !mysql_real_connect(conn, HOST, USER, PASS, DB, 0, NULL, 0)) {
-                finish_with_error(conn);  // MySQL 연결 실패 시 에러 처리
-            }
+        memset(name_msg, 0x0, sizeof(name_msg));  // 메시지 버퍼 초기화
+        str_len = read(*sock, name_msg, NAME_SIZE + BUF_SIZE);  // 서버로부터 메시지 수신
+        if (str_len <= 0) {  // 연결 종료 시
+            *sock = -1;
+            break;
+        }
+        name_msg[str_len] = 0;  // 문자열 종료 처리
+        fputs(name_msg, stdout);  // 메시지 출력
 
-            // 심박수 데이터 가져오기 
-            // 최근 6시간 동안의 데이터 수집
-            if (mysql_query(conn, "SELECT hbeat FROM lull_sensor WHERE time >= NOW() - INTERVAL 6 HOUR;")) {
-                finish_with_error(conn);
-            }
+        // 수신 메시지 토큰화
+        pToken = strtok(name_msg, "[:@]");
+        i = 0;
+        while (pToken != NULL) {
+            pArray[i] = pToken;
+            if (++i >= ARR_CNT)
+                break;
+            pToken = strtok(NULL, "[:@]");
+        }
 
-            MYSQL_RES* result = mysql_store_result(conn);
-            if (result == NULL) {
-                finish_with_error(conn);
-            }
+        // 센서 데이터인 경우 MySQL에 저장
+        if(!strcmp(pArray[1],"SENSOR") && (i == 5)){
+            illu = atoi(pArray[2]);
+            temp = (int)(atof(pArray[3]) * 0.95 + 0.5);
+            humi = atof(pArray[4]);
+            sprintf(sql_cmd, "insert into sensor(name, date, time,illu, temp, humi) values(\"%s\",now(),now(),%d,%lf,%lf)", pArray[0], illu, temp, humi);
+        } else {
+            continue;
+        }
 
-            // 결과에서 심박수 데이터를 배열에 저장
-            MYSQL_ROW sqlrow;
-            int i = 0, count = mysql_num_rows(result);
-            while ((sqlrow = mysql_fetch_row(result))) {
-                hbeat[i++] = atoi(sqlrow[0]);
-            }
-            mysql_free_result(result);
-
-            // 최근 1개의 온도 및 습도 데이터 가져오기
-            if (mysql_query(conn, "SELECT temp, humi FROM lull_sensor ORDER BY date DESC, time DESC LIMIT 1;")) {
-                finish_with_error(conn);
-            }
-
-            result = mysql_store_result(conn);
-            if (result == NULL) {
-                finish_with_error(conn);
-            }
-
-            sqlrow = mysql_fetch_row(result);
-            temp = atoi(sqlrow[0]);
-            humi = atoi(sqlrow[1]);
-            mysql_free_result(result);
-            mysql_close(conn);
-
-            // HRV 계산 및 스트레스 메시지 전송
-            calculateHRVFromHeartRateNSendData(hbeat, count, temp, humi, &hrv);
-            timer_expired = 0;  // 타이머 만료 상태 초기화
+        // MySQL 쿼리 실행
+        res = mysql_query(conn, sql_cmd);
+        if (!res) {
+            printf("inserted %lu rows\n", (unsigned long)mysql_affected_rows(conn));
+        } else {
+            fprintf(stderr, "ERROR: %s[%d]\n", mysql_error(conn), mysql_errno(conn));
         }
     }
+
+    mysql_close(conn);  // MySQL 연결 종료
+    return NULL;
+}
+
+// HRV 계산 및 데이터를 처리하는 스레드 함수
+void* hrv_msg(void* arg) {
+    MYSQL* conn = mysql_init(NULL);  // MySQL 초기화
+
+    if (conn == NULL || !mysql_real_connect(conn, HOST, USER, PASS, DB, 0, NULL, 0)) {  // MySQL 연결 실패 시
+        finish_with_error(conn);  // 에러 처리
+    }
+
+    while (1) {
+        pthread_mutex_lock(&mutex);  // 뮤텍스 잠금
+        while (!timer_expired) {  // 타이머 만료 대기
+            pthread_cond_wait(&cond, &mutex);  // 조건 변수 대기
+        }
+        timer_expired = 0;  // 타이머 만료 상태 초기화
+        pthread_mutex_unlock(&mutex);  // 뮤텍스 해제
+
+        // 심박수 데이터 가져오기 (MySQL 쿼리)
+        if (mysql_query(conn, "SELECT hbeat FROM lull_sensor WHERE time >= NOW() - INTERVAL 6 HOUR;")) {
+            finish_with_error(conn);  // 쿼리 실패 시 처리
+        }
+
+        MYSQL_RES* result = mysql_store_result(conn);
+        if (result == NULL) {
+            finish_with_error(conn);  // 결과 저장 실패 시 처리
+        }
+
+        // 쿼리 결과에서 심박수 데이터를 배열에 저장
+        MYSQL_ROW sqlrow;
+        int i = 0, count = mysql_num_rows(result);
+        while ((sqlrow = mysql_fetch_row(result))) {
+            hbeat[i++] = atoi(sqlrow[0]);
+        }
+        mysql_free_result(result);  // 결과 메모리 해제
+
+        // 최근 1개의 온도 및 습도 데이터 가져오기
+        if (mysql_query(conn, "SELECT temp, humi FROM lull_sensor ORDER BY date DESC, time DESC LIMIT 1;")) {
+            finish_with_error(conn);  // 쿼리 실패 시 처리
+        }
+
+        result = mysql_store_result(conn);
+        if (result == NULL) {
+            finish_with_error(conn);  // 결과 저장 실패 시 처리
+        }
+
+        sqlrow = mysql_fetch_row(result);
+        temp = atoi(sqlrow[0]);  // 온도 데이터 가져오기
+        humi = atoi(sqlrow[1]);  // 습도 데이터 가져오기
+        mysql_free_result(result);  // 결과 해제
+
+        // HRV 계산 및 스트레스 메시지 전송
+        calculateHRVFromHeartRateNSendData(hbeat, count, temp, humi, &hrv);
+    }
+
+    mysql_close(conn);  // MySQL 연결 종료
+    return NULL;
 }
 
 // 메인 함수
@@ -260,29 +343,32 @@ int main(int argc, char* argv[]) {
     pthread_t snd_thread, rcv_thread, hrv_thread;
     void* thread_return;
 
-    // 명령어 인자 체크 (IP, 포트, 이름 필요)
-    if (argc != 4) {
+    if (argc != 4) {  // 명령어 인자 체크
         printf("Usage: %s <IP> <port> <name>\n", argv[0]);
         exit(1);
     }
 
-    snprintf(name, sizeof(name), "%s", argv[3]);  // 이름 설정
+    snprintf(name, sizeof(name), "%s", argv[3]);  // 사용자 이름 설정
 
     sock = socket(PF_INET, SOCK_STREAM, 0);  // 소켓 생성
-    if (sock == -1)
+    if (sock == -1) {
         error_handling("socket() error");
+    }
 
-    memset(&serv_addr, 0, sizeof(serv_addr));  // 서버 주소 설정
+    // 서버 주소 설정
+    memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = inet_addr(argv[1]);  // IP 설정
     serv_addr.sin_port = htons(atoi(argv[2]));  // 포트 설정
 
-    // 서버에 연결 시도
-    if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) == -1)
+    // 서버에 연결
+    if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) == -1) {
         error_handling("connect() error");
+    }
 
-    snprintf(msg, sizeof(msg), "[%s:PASSWD]", name);  // 로그인 메시지 포맷
-    write(sock, msg, strlen(msg));  // 서버에 전송
+    // 로그인 메시지 전송
+    snprintf(msg, sizeof(msg), "[%s:PASSWD]", name);
+    write(sock, msg, strlen(msg));
 
     // 송신, 수신, HRV 스레드 생성
     pthread_create(&snd_thread, NULL, send_msg, (void*)&sock);
