@@ -60,8 +60,8 @@ int main(int argc, char *argv[])
 		char msg[BUF_SIZE];
 
 		CLIENT_INFO client_info[MAX_CLNT] = {{0,-1,"","JYJ_STM","PASSWD"}, \
-				{0,-1,"","JYJ_UBT","PASSWD"},  {0,-1,"","3","PASSWD"}, \
-				{0,-1,"","4","PASSWD"},  {0,-1,"","5","PASSWD"}, \
+				{0,-1,"","JYJ_SQL","PASSWD"},  {0,-1,"JYJ_ARD","3","PASSWD"}, \
+				{0,-1,"JYJ_RPI","4","PASSWD"},  {0,-1,"JYJ_UBT","5","PASSWD"}, \
 				{0,-1,"","6","PASSWD"},  {0,-1,"","7","PASSWD"}, \
 				{0,-1,"","8","PASSWD"},  {0,-1,"","9","PASSWD"}, \
 				{0,-1,"","10","PASSWD"},  {0,-1,"","11","PASSWD"}, \
