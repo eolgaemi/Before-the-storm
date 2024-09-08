@@ -102,8 +102,10 @@ int main(int argc, char *argv[])
 		// 소켓 옵션 설정
 		// TIME_WAIT 시간이 지나기 전에 다시 포트 바인딩 가능
 		// 보안 문제 발생가능?
-		setsockopt(serv_sock, SOL_SOCKET, SO_REUSEADDR, (void*)&sock_option, sizeof(sock_option));
-
+		#ifdef DEBUG
+    			setsockopt(serv_sock, SOL_SOCKET, SO_REUSEADDR, (void*)&sock_option, sizeof(sock_option));
+		#endif
+	
 		// 소켓과 서버 주소 바인딩
 		if(bind(serv_sock, (struct sockaddr *)&serv_adr, sizeof(serv_adr))==-1)
 				error_handling("bind() error");
